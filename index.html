@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>MedDRA Mini‑Coder v2 — Camelia Busuioc (Training Sandbox)</title>
+<style>
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#fafafa;color:#111;margin:0}
+  .wrap{max-width:980px;margin:0 auto;padding:24px}
+  textarea{width:100%;min-height:120px;border:1px solid #d4d4d4;border-radius:14px;padding:12px}
+  .btn{display:inline-block;padding:10px 14px;border-radius:12px;border:1px solid #d4d4d4;background:#fff;cursor:pointer;margin-right:8px;margin-top:6px}
+  .btn.primary{background:#4f46e5;color:#fff;border-color:#4f46e5}
+  .btn.ghost{background:#fff;border-color:#d4d4d4}
+  .btn:disabled{opacity:0.55;cursor:not-allowed}
+  .card{background:#fff;border:1px solid #e5e5e5;border-radius:16px;padding:16px;margin-top:12px}
+  .muted{color:#666;font-size:12px}
+  table{border-collapse:collapse;width:100%} th,td{border-top:1px solid #e5e5e5;padding:8px;text-align:left} th{color:#666;font-weight:600}
+  a.brand{color:#4f46e5;text-decoration:none} a.brand:hover{text-decoration:underline}
+  .tabs button{padding:8px 12px;border-radius:999px;border:1px solid #d4d4d4;background:#fff;margin-right:8px}
+  .tabs .active{background:#4f46e5;color:#fff;border-color:#4f46e5}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>MedDRA Mini‑Coder v2 (Training Sandbox)</h1>
+  <p class="muted">For training only — verify against your licensed MedDRA. MedDRA® is a registered trademark of IFPMA on behalf of ICH.</p>
+  <div class="muted" style="margin-top:6px">Built by <a class="brand" href="https://www.linkedin.com/in/camelia-busuioc/" target="_blank" rel="noopener">Camelia Busuioc</a></div>
+
+  <div class="card">
+    <div><b>Custom dictionary (CSV, optional):</b> <input id="dictFile" type="file" accept=".csv,text/csv"/> <span id="dictCount" class="muted"></span></div>
+    <div class="muted" style="margin-top:6px">CSV columns: <code>term,soc,synonyms</code> (synonyms separated by <code>;</code>). Starter dictionary is already embedded below.</div>
+  </div>
+
+  <div class="card">
+    <div class="tabs">
+      <button id="tabSingle" class="active">Single</button>
+      <button id="tabBatch">Batch</button>
+    </div>
+    <div id="singlePane">
+      <textarea id="inp" placeholder="e.g., 'ALT 350, AST 290 – transaminases elevated' or 'Wrong drug instead of Drug X' or 'Oral mucositis after MTX'"></textarea>
+      <div>
+        <button class="btn primary" id="an">Analyze</button>
+        <button class="btn ghost" id="copy" disabled>Copy PT/SOC</button>
+        <button class="btn" id="ex1">Cold sweats</button>
+        <button class="btn" id="ex2">Neonatal fever 2-day-old baby</button>
+        <button class="btn" id="ex3">Wrong drug instead of Drug X, now short of breath</button>
+      </div>
+      <div id="out"></div>
+      <div class="muted" style="margin-top:6px">Tip: if your verbatim lists multiple events (e.g., "fever, cough"), use the Batch tab and put <i>one per line</i>.</div>
+    </div>
+    <div id="batchPane" style="display:none">
+      <textarea id="batch" placeholder="Paste multiple verbatims, one per line"></textarea>
+      <div><button class="btn primary" id="anBatch">Analyze batch</button><button class="btn" id="expCSV">Export CSV</button></div>
+      <div style="overflow:auto"><table id="tab"></table></div>
+    </div>
+  </div>
+
+  <div class="muted" style="margin-top:10px">© For training only. MedDRA® is a registered trademark of IFPMA on behalf of ICH. • Built by <a class="brand" href="https://www.linkedin.com/in/camelia-busuioc/" target="_blank" rel="noopener">Camelia Busuioc</a></div>
+</div>
+
+<script>
+const norm=function(t){return (t||'').toLowerCase().replace(/\s+/g,' ').trim();};
+
+// Embedded starter dictionary (you can override/extend by uploading CSV)
+var DICT=[
+  {term:"Oral mucositis",soc:"Gastrointestinal disorders",synonyms:["Stomatitis","Mouth ulcers"]},
+  {term:"Urticaria",soc:"Skin and subcutaneous tissue disorders",synonyms:["Hives"]},
+  {term:"Cold sweat",soc:"Skin and subcutaneous tissue disorders",synonyms:["Clammy sweat","Cold sweats"]},
+  {term:"Neonatal pyrexia",soc:"Pregnancy, puerperium and perinatal conditions",synonyms:["Newborn fever","Neonatal fever"]},
+  {term:"Urinary tract infection",soc:"Infections and infestations",synonyms:["UTI","Cystitis"]},
+  {term:"Pulmonary tuberculosis",soc:"Infections and infestations",synonyms:["TB","AFB positive"]},
+  {term:"Deep vein thrombosis",soc:"Vascular disorders",synonyms:["Femoral vein thrombosis","Upper extremity deep vein thrombosis"]},
+  {term:"Rectal haemorrhage",soc:"Gastrointestinal disorders",synonyms:["Rectal bleeding","Lower GI bleed"]},
+  {term:"Hyponatraemia",soc:"Metabolism and nutrition disorders",synonyms:["Sodium decreased","Hyponatremia"]},
+  {term:"Transaminases increased",soc:"Investigations",synonyms:["ALT increased","AST increased","Transaminase increased"]},
+  {term:"Troponin increased",soc:"Investigations",synonyms:["Troponin I increased","Cardiac troponin increased"]},
+  {term:"Wrong drug administered",soc:"Injury, poisoning and procedural complications",synonyms:["Wrong product dispensed","Wrong drug taken"]},
+  {term:"Wrong strength of product administered",soc:"Injury, poisoning and procedural complications",synonyms:["Wrong dose administered","Wrong product strength dispensed"]},
+  {term:"Wrong frequency of product administration",soc:"Injury, poisoning and procedural complications",synonyms:["Incorrect dosing regimen administered","Gave twice by mistake"]},
+  {term:"Product counterfeit",soc:"Product issues",synonyms:["Counterfeit product","Counterfeit drug administered"]},
+  {term:"Product sterility test positive",soc:"Product issues",synonyms:["Product contamination microbial","Suspected contamination"]},
+  {term:"COVID-19 pneumonia",soc:"Infections and infestations",synonyms:["Viral pneumonia"]},
+  {term:"Aortic aneurysm ruptured",soc:"Vascular disorders",synonyms:["Ruptured aortic aneurysm"]},
+  {term:"Aortic valve stenosis",soc:"Cardiac disorders",synonyms:[]},
+  {term:"Stomatitis",soc:"Gastrointestinal disorders",synonyms:["Oral mucositis"]},
+  {term:"Dyspnoea",soc:"Respiratory, thoracic and mediastinal disorders",synonyms:["Shortness of breath"]},
+  {term:"Vaccination site tenderness",soc:"General disorders and administration site conditions",synonyms:["Injection site tenderness"]},
+  {term:"Pyrexia",soc:"General disorders and administration site conditions",synonyms:["Fever","High temperature","Febrile"]},
+  {term:"Cough",soc:"Respiratory, thoracic and mediastinal disorders",synonyms:[]}
+];
+
+// CSV parser (keeps commas inside quoted SOCs)
+function parseCSV(text){
+  var rows=(text||'').split(/\r?\n/).filter(Boolean);
+  var out=[]; var start=0;
+  var header=(rows[0]||'').toLowerCase();
+  if((/(^|,)term(,|$)/).test(header) && (/(,|^)soc(,|$)/).test(header)) start=1;
+
+  function splitRow(row){
+    var res=[]; var cur=''; var inQ=false;
+    for(var i=0;i<row.length;i++){ var c=row[i];
+      if(c=='"'){ if(inQ && row[i+1]=='"'){ cur+='"'; i++; } else { inQ=!inQ; } }
+      else if(c==',' && !inQ){ res.push(cur); cur=''; }
+      else { cur+=c; }
+    }
+    res.push(cur);
+    for(var j=0;j<res.length;j++){ res[j]=res[j].replace(/^\"|\"$/g,'').trim(); }
+    return res;
+  }
+
+  for(var r=start;r<rows.length;r++){ var cols=splitRow(rows[r]);
+    if(!cols.length) continue;
+    var term=(cols[0]||'').trim(); var soc=(cols[1]||'').trim();
+    var synField=cols[2]||''; var syn=synField.split(';').map(function(s){return s.trim();}).filter(function(s){return s;});
+    if(term && soc) out.push({term:term, soc:soc, synonyms:syn});
+  }
+  return out;
+}
+
+function matchCustomDict(raw){
+  var text=norm(raw); if(!DICT.length||!text) return null; var best=null;
+  for(var i=0;i<DICT.length;i++){ var e=DICT[i]; var tN=norm(e.term);
+    if(text===tN){ best={pt:e.term, soc:e.soc, alt:[], conf:0.98, why:'Exact match in dictionary: “'+e.term+'”'}; break; }
+    if(text.indexOf(tN)>=0){ if(!(best && best.conf>0.9)) best={pt:e.term, soc:e.soc, alt:[], conf:0.9, why:'Contained dictionary term: “'+e.term+'”'}; }
+    if(e.synonyms){ for(var k=0;k<e.synonyms.length;k++){ var s=e.synonyms[k]; var sN=norm(s); if(!sN) continue;
+      if(text===sN){ best={pt:e.term, soc:e.soc, alt:[s], conf:0.94, why:'Exact synonym match: “'+s+'” → '+e.term}; break; }
+      if(text.indexOf(sN)>=0){ if(!(best && best.conf>=0.92)) best={pt:e.term, soc:e.soc, alt:[s], conf:0.88, why:'Contained synonym: “'+s+'” → '+e.term}; }
+    }}
+  }
+  return best;
+}
+
+// Heuristic analyzer (compact, interview-focused)
+function analyzeHeuristic(raw){
+  var text=norm(raw);
+  // Product issues / errors
+  if(/counterfeit/.test(text)) return {pt:'Product counterfeit', soc:'Product issues', alt:['Counterfeit drug administered'], conf:0.95, why:'“Counterfeit” keyword'};
+  if(/sterility|contaminat(ed|ion)|microbial/.test(text)) return {pt:'Product sterility test positive', soc:'Product issues', alt:['Product contamination microbial','Suspected contamination'], conf:0.93, why:'Sterility/contamination keywords'};
+  if(/wrong\s+drug/.test(text)) return {pt:'Wrong drug administered', soc:'Injury, poisoning and procedural complications', alt:['Wrong product dispensed'], conf:0.94, why:'“Wrong drug”'};
+  if(/wrong\s+(strength|dose)/.test(text)) return {pt:'Wrong strength of product administered', soc:'Injury, poisoning and procedural complications', alt:['Wrong product strength dispensed','Overdose'], conf:0.9, why:'Wrong strength/dose'};
+  if(/(two days in a row|twice (daily|a day) by mistake|wrong frequency|every day instead of weekly)/.test(text)) return {pt:'Wrong frequency of product administration', soc:'Injury, poisoning and procedural complications', alt:['Incorrect dosing regimen administered'], conf:0.9, why:'Regimen error'};
+  // Procedures
+  if(/colonoscopy|biopsy|picc|valve replacement|angioplasty|appendectomy/.test(text)) return {pt:'Procedure term (e.g., Colonoscopy)', soc:'Surgical and medical procedures', alt:['Record complications in clinical SOCs'], conf:0.88, why:'Procedure keyword'};
+  // Labs vs diagnosis
+  if(/troponin/.test(text)) return {pt:'Troponin increased', soc:'Investigations', alt:[], conf:0.92, why:'Biomarker only'};
+  if(/(ck|cpk)\s*-?mb/.test(text)) return {pt:'Creatine kinase MB increased', soc:'Investigations', alt:[], conf:0.88, why:'Biomarker only'};
+  if(/\balt\b|\bast\b|transaminase/.test(text)) return {pt:'Transaminases increased', soc:'Investigations', alt:['ALT increased','AST increased'], conf:0.9, why:'Lab only'};
+  if(/(sodium|hypon(a|æ)t)/.test(text) && /hypon(a|æ)t/.test(text)) return {pt:'Hyponatraemia', soc:'Metabolism and nutrition disorders', alt:['Sodium decreased'], conf:0.9, why:'Diagnosis given'};
+  // Infections
+  if(/(covid|sars[-\s]?cov[-\s]?2).*pneumonia|pneumonia.*(covid|sars[-\s]?cov[-\s]?2)/.test(text)) return {pt:'COVID-19 pneumonia', soc:'Infections and infestations', alt:['Pneumonia','Viral pneumonia'], conf:0.92, why:'Etiology + diagnosis'};
+  if(/(uti|urinary tract infection)/.test(text)) return {pt:'Urinary tract infection', soc:'Infections and infestations', alt:['Cystitis'], conf:0.9, why:'Diagnosis UTI'};
+  if(/tuberculosis|afb\s*positive/.test(text)) return {pt:'Pulmonary tuberculosis', soc:'Infections and infestations', alt:['Tuberculosis'], conf:0.92, why:'TB keywords'};
+  // Respiratory symptom
+  if(/short(ness)? of breath|dysp(noe|ne)a/.test(text)) return {pt:'Dyspnoea', soc:'Respiratory, thoracic and mediastinal disorders', alt:['Respiratory distress'], conf:0.88, why:'Symptom'};
+  // Skin
+  if(/cold\s*sweats?/.test(text)) return {pt:'Cold sweat', soc:'Skin and subcutaneous tissue disorders', alt:['Hyperhidrosis'], conf:0.88, why:'Phrase'};
+  if(/hyperhidrosis|diaphoresis/.test(text)) return {pt:'Hyperhidrosis', soc:'Skin and subcutaneous tissue disorders', alt:['Cold sweat'], conf:0.85, why:'Sweating'};
+  if(/urticaria|hives?/.test(text)) return {pt:'Urticaria', soc:'Skin and subcutaneous tissue disorders', alt:['Pruritus'], conf:0.9, why:'Wheals'};
+  // GI
+  if(/(oral mucositis|stomatitis|mouth ulcers?)/.test(text)) return {pt:'Stomatitis', soc:'Gastrointestinal disorders', alt:['Oral mucositis (LLT)'], conf:0.9, why:'Oral cavity → GI'};
+  if(/rectal (bleeding|haemorrhage|hemorrhage)|lower gi bleed/.test(text)) return {pt:'Rectal haemorrhage', soc:'Gastrointestinal disorders', alt:['Lower gastrointestinal haemorrhage'], conf:0.9, why:'Localized lower GI bleed'};
+  // Vascular
+  if(/dvt|deep vein thrombosis|doppler.*thromb(us|osis)|femoral vein thrombosis|upper extremity thrombosis/.test(text)) return {pt:'Deep vein thrombosis', soc:'Vascular disorders', alt:['Catheter-associated thrombosis'], conf:0.9, why:'Imaging/keyword'};
+  if(/aortic aneurysm.*rupt/.test(text)) return {pt:'Aortic aneurysm ruptured', soc:'Vascular disorders', alt:['Aortic aneurysm'], conf:0.93, why:'Ruptured qualifier'};
+  // Cardiac
+  if(/aortic valve stenosis/.test(text)) return {pt:'Aortic valve stenosis', soc:'Cardiac disorders', alt:[], conf:0.88, why:'Diagnosis present'};
+  // Perinatal
+  if(/(neonate|neonatal|newborn|2\s*day\s*old|1\s*day\s*old)/.test(text) && /(fever|pyrexia)/.test(text)) return {pt:'Neonatal pyrexia', soc:'Pregnancy, puerperium and perinatal conditions', alt:['Pyrexia'], conf:0.92, why:'Neonatal + fever'};
+  // Admin site
+  if(/(vaccin(e|ation) site|injection site).*(tender(ness)?|pain)/.test(text)){ var tender=/tender(ness)?/.test(text); return {pt:(tender?'Vaccination site tenderness':'Vaccination site pain'), soc:'General disorders and administration site conditions', alt:[(tender?'Injection site tenderness':'Injection site pain')], conf:0.9, why:'Admin-site reaction'}; }
+  // Nervous system symptom
+  if(/migraine/.test(text)) return {pt:'Migraine', soc:'Nervous system disorders', alt:['Headache'], conf:0.88, why:'Diagnosis'};
+  if(/headache/.test(text)) return {pt:'Headache', soc:'Nervous system disorders', alt:['Migraine'], conf:0.8, why:'Symptom'};
+
+  return {pt:'No match — code from diagnosis/symptom or lab', soc:'—', alt:[], conf:0.3, why:'No strong rule hit'};
+}
+
+function analyze(raw){ return matchCustomDict(raw) || analyzeHeuristic(raw); }
+
+function renderSingle(r){
+  var out=document.getElementById('out'); out.innerHTML='';
+  var card=document.createElement('div'); card.className='card';
+  var html='';
+  html += '<h3>Suggested coding</h3>';
+  html += '<div><b>PT:</b> '+ r.pt +'</div>';
+  html += '<div><b>Primary SOC:</b> '+ r.soc +'</div>';
+  html += '<div><b>Confidence:</b> '+ Math.round((r.conf||0)*100) +'%</div>';
+  html += '<div class="muted">Why: '+ r.why +'</div>';
+  if(r.alt && r.alt.length){ html += '<div style="margin-top:6px;font-size:12px;color:#666">Alternatives / LLTs</div><ul class="muted">'; for(var i=0;i<r.alt.length;i++) html += '<li>'+ r.alt[i] +'</li>'; html += '</ul>'; }
+  card.innerHTML=html; out.appendChild(card);
+}
+
+function csvWrap(s){ var t=(s==null?'':String(s)); return /[",\n]/.test(t)? '"'+t.replace(/"/g,'""')+'"' : t; }
+
+function runBatch(lines){
+  var rows=[];
+  for(var i=0;i<lines.length;i++){ var v=lines[i]; var r=analyze(v); rows.push({i:i+1, verbatim:v, pt:r.pt, soc:r.soc, conf:Math.round((r.conf||0)*100), why:r.why}); }
+  var tab=document.getElementById('tab');
+  var head='<tr><th>#</th><th>Verbatim</th><th>PT</th><th>Primary SOC</th><th>Confidence</th><th>Why/Rationale</th></tr>';
+  var body=''; for(var j=0;j<rows.length;j++){ var rr=rows[j]; body += '<tr><td>'+rr.i+'</td><td>'+csvWrap(rr.verbatim)+'</td><td>'+csvWrap(rr.pt)+'</td><td>'+csvWrap(rr.soc)+'</td><td>'+rr.conf+'%</td><td>'+csvWrap(rr.why)+'</td></tr>'; }
+  tab.innerHTML=head+body;
+  window.__rows = rows;
+}
+
+function exportCSV(){
+  if(!window.__rows || !window.__rows.length) return;
+  var header=['#','Verbatim','PT','SOC','Confidence%','Why/Rationale'];
+  var lines=[header.join(',')];
+  for(var i=0;i<window.__rows.length;i++){ var r=window.__rows[i]; lines.push([r.i,csvWrap(r.verbatim),csvWrap(r.pt),csvWrap(r.soc),r.conf,csvWrap(r.why)].join(',')); }
+  var blob=new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8'});
+  var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='meddra-mini-coder_batch.csv'; document.body.appendChild(a); a.click(); a.remove();
+}
+
+// UI hooks
+var LAST=null;
+document.getElementById('an').onclick=function(){ var r=analyze(document.getElementById('inp').value); LAST=r; renderSingle(r); document.getElementById('copy').disabled=false; };
+document.getElementById('copy').onclick=async function(){ if(!LAST) return; var text='PT: '+LAST.pt+'\nPrimary SOC: '+LAST.soc+'\nConfidence: '+Math.round((LAST.conf||0)*100)+'%\nWhy: '+LAST.why+(LAST.alt&&LAST.alt.length? '\nAlternatives / LLTs: '+LAST.alt.join(', ') : ''); try{ await navigator.clipboard.writeText(text); this.textContent='Copied ✓'; }catch(e){ var ta=document.createElement('textarea'); ta.value=text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); this.textContent='Copied ✓'; } var self=this; setTimeout(function(){ self.textContent='Copy PT/SOC'; }, 1000); };
+document.getElementById('ex1').onclick=function(){document.getElementById('inp').value='Cold sweats';};
+document.getElementById('ex2').onclick=function(){document.getElementById('inp').value='Neonatal fever 2-day-old baby';};
+document.getElementById('ex3').onclick=function(){document.getElementById('inp').value='Wrong drug instead of Drug X, now short of breath';};
+
+document.getElementById('anBatch').onclick=function(){ var text=document.getElementById('batch').value||''; var lines=text.split(/\r?\n/).map(function(s){return s.trim();}).filter(function(s){return s;}); runBatch(lines); };
+document.getElementById('expCSV').onclick=exportCSV;
+
+document.getElementById('tabSingle').onclick=function(){ document.getElementById('singlePane').style.display='block'; document.getElementById('batchPane').style.display='none'; this.className='active'; document.getElementById('tabBatch').className=''; };
+document.getElementById('tabBatch').onclick=function(){ document.getElementById('singlePane').style.display='none'; document.getElementById('batchPane').style.display='block'; this.className='active'; document.getElementById('tabSingle').className=''; };
+
+document.getElementById('dictFile').addEventListener('change', function(e){
+  var f=e.target.files && e.target.files[0]; if(!f) return;
+  var r=new FileReader(); r.onload=function(ev){ var txt=ev.target.result; try{ var parsed=parseCSV(txt); DICT=parsed; document.getElementById('dictCount').textContent=' '+parsed.length+' terms loaded'; }catch(err){ document.getElementById('dictCount').textContent=' error loading CSV'; } }; r.readAsText(f);
+});
+</script>
+</body>
+</html>
